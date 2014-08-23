@@ -1,0 +1,58 @@
+#!/bin/bash
+
+if [ "$1" == "" ]; then
+    echo "Usage: gpg-edit filename.asc"
+    exit 1
+fi
+
+TMP=/tmp/gpg_edit.$$
+TMPPASS=/tmp/gpg_edit.1.$$
+
+if [ "$EDITOR" == "" ]; then
+    if [ "$(which subl)" != "" ]; then
+        EDITOR="subl -w"
+    else
+        EDITOR="vi"
+    fi
+fi
+
+TRY=0
+
+while [ $TRY -lt 3 ]; do
+    read -p "File password: " -s PASSWD
+    echo ""
+
+    touch $TMPPASS
+    chmod 700 $TMPPASS
+    echo "$PASSWD" > $TMPPASS
+    gpg --batch --no-tty --passphrase-file $TMPPASS -d $1 > $TMP 2> /dev/null
+    if [ $? -ne 0 ]; then
+        let TRY="$TRY+1"
+        sleep 1
+    else
+        rm $TMPPASS
+        SIG1=$(openssl sha1 < $TMP)
+        $EDITOR $TMP
+        SIG2=$(openssl sha1 < $TMP)
+
+        if [ "$SIG1" != "$SIG2" ]; then
+            touch $TMPPASS
+            chmod 700 $TMPPASS
+            echo "$PASSWD" > $TMPPASS
+            gpg --batch --no-tty --passphrase-file $TMPPASS -ca $TMP
+            rm $TMPPASS
+            mv $TMP.asc $1
+            echo "Updated!"
+        else
+            echo "No changes..."
+        fi
+        TRY=10
+    fi
+    rm $TMP
+done
+
+if [ $TRY -eq 3 ]; then
+    echo "Wrong password - aborting"
+fi
+
+PASSWD="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

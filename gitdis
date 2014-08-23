@@ -1,0 +1,157 @@
+#!/bin/bash
+
+<<<<<<< HEAD
+#################################################################
+#
+# The idea is for a program that allows uploads/downloads of 
+# data to a public github account without disclosure / confidentiality
+# concerns. Mostly for encryption[+compression] of cat photos, songs,
+# nuclear launch codes, vagrant files, etc.
+#
+
+
+function encrypt {
+	read -sp "Please set encryption password: " PASSWD1
+        echo ""
+        read -sp "Please retype password: " PASSWD2
+        echo ""
+
+        if [ "$PASSWD1" != "$PASSWD2" ]; then
+                echo "Password mismatch, exiting..."; exit;
+        fi
+
+        for file in $filelist; do
+                if [ "$(head -1 $file | grep -v "BEGIN PGP MESSAGE")" == "" ] ; then
+                        echo "$file encrypted, skipping"
+                        continue
+                fi
+
+                echo "encrypting $file ...."
+                echo "$PASSWD1" | gpg --no-tty --batch --passphrase-fd 0 -ca $file 2>/dev/null
+                mv ./$file.asc ./$file
+        done
+
+        # wipe passwd variables
+        PASSWD1="Has anyone really been far even as decided to use even go want to do look more like?"
+        PASSWD2=$(echo $PASSWD1)
+        exit
+}
+
+function decrypt {
+        read -sp "Password: " PASSWD
+        echo ""
+        for file in $filelist; do
+                TMP=./$file.swp
+                if [ -e $TMP ]; then
+                        echo "$file.swp exists, skipping $file"
+                fi
+                if [ "$(head -1 $file | grep -v "BEGIN PGP MESSAGE")" != "" ] ; then
+                        echo "$file not gpg encrypted!"
+                        continue
+                fi
+                echo "Decrypting $file ..."
+                echo $PASSWD | gpg --no-tty --batch --passphrase-fd 0 -d $file > $TMP 2>/dev/null
+        if [ -s $TMP ] ; then
+                mv $TMP $file
+        else
+                rm $TMP
+                echo "BAD PASSWORD FOR $file, SKIPPING"
+        fi
+        done
+        #overwrite password variable
+        PASSWORD="ALL YOUR BASE ARE BELONG TO US"
+}
+
+
+
+
+# Generate a file list of files and directories in the current working
+# directory
+filelist=$(find -mindepth 1 -maxdepth 1 -type f | grep -v getdis )
+dirlist=$(find -mindepth 1 -maxdepth 1 -type d)
+
+
+case "$1" in
+################################
+# Case: encrypt
+################################
+	"-c")
+	encrypt	
+	;;
+
+######################################
+# Case: Decrypt
+######################################
+	"-d")
+	decrypt
+	;;
+#####################################
+# Case: Tarball
+####################################
+	"-t")
+	tarball=$(pwd | cut -d/ -f 2- | sed "s/\//_/g")
+	tar cvzf ./$tarball.tgz ./
+	filelist=$(find ./$tarball)
+	encrypt
+	;;
+########################################
+# Case: Untar
+########################################
+	"-u")
+	untarit
+	;;
+
+=======
+filelist=$(find -mindepth 1 -maxdepth 1 -type f | grep -v getdis )
+case "$1" in
+
+	"-c")
+	read -sp "Please set encryption password: " PASSWD1
+	echo ""
+	read -sp "Please retype password: " PASSWD2
+	echo ""
+	if [ "$PASSWD1" != "$PASSWD2" ]; then 
+		echo "Password mismatch, exiting..."; exit;
+	fi
+	for file in $filelist; do
+		if [ "$(head -1 $file | grep -v "BEGIN PGP MESSAGE")" == "" ] ; then
+			echo "$file encrypted, skipping"
+			continue
+		fi
+		echo "encrypting $file ...."
+		echo "$PASSWD1" | gpg --no-tty --batch --passphrase-fd 0 -ca $file 2>/dev/null
+		mv ./$file.asc ./$file
+	done
+	PASSWD1="Has anyone really been far even as decided to use even go want to do look more like?"
+	PASSWD2=$(echo $PASSWD1)
+	exit
+	;;
+
+	"-d")
+	read -sp "Password: " PASSWD
+	echo ""
+	for file in $filelist; do
+		TMP=./$file.swp
+		if [ -e $TMP ]; then
+			echo "$file.swp exists, skipping $file"
+		fi
+		if [ "$(head -1 $file | grep -v "BEGIN PGP MESSAGE")" != "" ] ; then
+			echo "$file not gpg encrypted!"
+			continue
+		fi
+		echo "Decrypting $file ..."
+		echo $PASSWD | gpg --no-tty --batch --passphrase-fd 0 -d $file > $TMP 2>/dev/null 
+	if [ -s $TMP ] ; then
+		mv $TMP $file
+	else
+		rm $TMP
+		echo "BAD PASSWORD FOR $file, SKIPPING"
+	fi
+	done
+	#overwrite password variable
+	PASSWORD="ALL YOUR BASE ARE BELONG TO US"
+	;;
+>>>>>>> 1f19d9c6f20c8dcbcb3c9bc765b2d00ae2c101d3
+esac
+
+

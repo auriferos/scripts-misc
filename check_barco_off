@@ -1,0 +1,36 @@
+#!/usr/bin/python
+
+
+import urllib2
+import sys
+from BeautifulSoup import BeautifulSoup, SoupStrainer
+
+# We want to make sure that our drexler auditorium barco projector is off.
+
+# Note: SquareUp means disabled, SquareDown means enabled. ButtonSingle is single bulb mode, dual is, well... dual.
+# <input name="ButtonDual" value="Dual" id="ButtonDual" class="SquareUp" type="submit">
+# <input name="ButtonSingle" value="  Single" id="ButtonSingle" class="SquareDown" type="submit">
+
+try:
+	page=urllib2.urlopen('http://barco')
+	soup=BeautifulSoup(page)
+	#soup returns list, but theres only one list element on the target page
+	iframe=soup("iframe")[0]
+	content=urllib2.urlopen('http://barco/'+iframe['src'])
+
+	for img in BeautifulSoup(content, parseOnlyThese=SoupStrainer('img')):
+		if img.has_key('alt') :
+			if img['id']=='ImageOn' and img['src']=='images/smallLedGreen.jpg':
+				print "Critical - Barco is on!"
+				sys.exit(2)
+			elif img['id']=='ImageOff' and img['src']=='images/smallLedGreen.jpg':
+				print "Normal - Barco in standby mode"
+				sys.exit(0)
+			else:
+				print "Warning - barco in unknown state"
+				sys.exit(1)
+
+
+except StandardError:
+	print "Warning - Barco in unknown state"
+	sys.exit(3)

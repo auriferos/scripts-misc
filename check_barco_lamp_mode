@@ -1,0 +1,33 @@
+#!/usr/bin/python
+
+
+import urllib2
+import sys
+from BeautifulSoup import BeautifulSoup, SoupStrainer
+
+# We want to make sure that our drexler auditorium barco projector doesn't have dual-bulb mode enabled.
+
+# Note: SquareUp means disabled, SquareDown means enabled. ButtonSingle is single bulb mode, dual is, well... dual.
+# <input name="ButtonDual" value="Dual" id="ButtonDual" class="SquareUp" type="submit">
+# <input name="ButtonSingle" value="  Single" id="ButtonSingle" class="SquareDown" type="submit">
+
+try:
+	page=urllib2.urlopen('http://barco')
+	soup=BeautifulSoup(page)
+
+	#soup returns list, but theres only one list element on the target page
+	iframe=soup("iframe")[0]
+	content=urllib2.urlopen('http://barco/'+iframe['src'])
+
+	for input in BeautifulSoup(content, parseOnlyThese=SoupStrainer('input')):
+		if input.has_key('class') :
+			if input['class']=='SquareDown' and input['name']=='ButtonDual':
+				print "Critical - ButtonDual is enabled"
+				sys.exit(2)
+			elif input['class']=='SquareDown' and input['name']=='ButtonSingle':
+				print "Normal - Barco is in Single Lamp mode"
+				sys.exit(0)
+
+except StandardError:
+	print "Warning - Barco unreachable"
+	sys.exit(1)

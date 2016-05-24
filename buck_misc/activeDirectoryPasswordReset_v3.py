@@ -10,14 +10,6 @@ from ldap import sasl
 import ldap.modlist as modlist
 import random
 
-
-############################3
-#
-#	Todo:
-#	- I should probably make ldap_conn
-#
-
-
 def string_to_int(string_int):
 	try:
 		return int(string_int.strip("'"))
@@ -70,9 +62,9 @@ def make_ldif(new_attr_val, curr_attr_val, attr_name):
 #				main
 ############################################################################
 
-ldap_serv = "my.ldap.serv.org"
-base_dn = "dc=serv,dc=org"
-username = 'me'
+ldap_serv = "dc.domain.org"
+base_dn = "dc=domain,dc=org"
+username = 'whoami'
 # username accepts active directory username if AD ldap instance.
 #set password if simple bind is desired (deprecated)
 passwd = 'lol no such luck'
@@ -110,20 +102,20 @@ if len(results) == 0:
 
 for i in range(0,len(results)):
 
-
 	if len(results[i][1]) <= 10 :
-		#stupidly bad pseudocheck; real users have long entries,
-		# but not sure about edge cases. 
 		continue
 	
+	#new_target_attr_val = str(random.randrange(0,1000,10))
 	target_dn = str(results[i][0])
+	#target_dict = {}
 	target_dict = init_dict(results[i][1])
+	#try:
 
-	#it's important to toggle before removing the dont expire;
-	# otherwise the account immediately locks out.
 	toggle_pwd_last_set(conn,target_dn,target_dict)
 	remove_pw_dont_expire(conn,target_dn,target_dict)
 
+	#except:
+		#print "error while querying " + target_dn
 	
 
 conn.unbind_s()

@@ -1,0 +1,208 @@
+#!/usr/bin/python
+# regex examples ###############
+#grab the names uncorrected, eg '(9)kentfield(10)buckcenter(3)org(0)'
+#       \([0-9]*\)[a-z0-9]* 
+#remove the dumb 'empty' lines from windows DNS log, which include (?)trailing(?) whitespaces.
+#       sed '/^[[:space:]]*$/d;s/[[:space:]]*$//' short_DNS_example
+#an ipv4 address
+#       [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+
+
+
+import socket
+import argparse
+import re
+import sys
+import json
+from dateutil import parser
+from datetime import datetime,timedelta
+import string
+
+
+def reverse_lookup(address):
+	try:
+                return socket.gethostbyaddr(address)[0]
+        except:
+                return address
+
+def strip_elements(line):
+	try:
+		date=find_mm_dd_yyyy_from_line(line)
+		source_ip=first_ip_from_line(line)
+		fqdn=find_domain_name(line)
+	except Exception as err:
+		raise ValueError('could not strip elements')
+	return date,source_ip,fqdn
+
+
+
+def first_ip_from_line(line):
+	ip=re.compile('[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+        ip_match=ip.findall(line)
+	if ip_match:
+		return ip_match[0]
+	else:
+		return 0
+
+
+def find_mm_dd_yyyy_from_line(line):
+	try:
+		my_date=re.compile('[0-9]+\/[0-9]+\/[0-9][0-9][0-9][0-9]')
+		my_date_match=my_date.findall(line)
+		return my_date_match[0]
+	except:
+		raise ValueError
+
+def find_domain_name(line):
+	try:
+		name_dirty=re.search("\([0-9]*\)[_a-zA-Z0-9\-()]+", line)
+		if name_dirty:
+			name_clean=re.sub(r'\([0-9]+\)', ".", name_dirty.group(0))[1:-1]
+			if 'in-addr.arpa' in name_clean:
+				new_name=name_clean.split('.')
+				name_clean=str('.'.join(new_name[-3::-1]))
+			return name_clean
+		else:
+			return 0
+	except:
+		raise ValueError
+	
+
+def top_level_domain(fqdn):
+	return ".".join(fqdn.split('.')[-2:])
+
+
+def blocks(files, size=65536):
+	while True:
+        	b=files.read(size)
+		if not b: break
+		yield b
+
+
+class dns_results():
+	query=[]
+	query_dict={}
+	response=[]
+	response_dict={}
+	dont_record=set("")
+		
+	reverse_lookups={}
+
+
+
+	def __init__(self):
+		self.query=[]
+		self.response=[]
+		self.reverse_lookups={}
+	#NEEDS WORK: splitting the logic from main into a class function 
+	def print_response(self):
+		print 'Direction        Date            Host                    Response'	
+		for r in self.response:
+			print r
+
+	def print_query(self):
+		print 'Direction        Date            Host                    Response'
+		for q in self.query:
+			print q
+
+
+	#NEEDS WORK: splitting the logic from main into a class function
+	def load_dns_log(self,file_f,load_date,lookup_reverse,site_name,query,response):
+		
+		linecount=sum(bl.count("\n") for bl in blocks(open(file_f)))
+		self.dont_record=set(open('whitelist').read().split())
+		i=0
+		for line in open(file_f):
+			i+=1
+			done=(i/float(linecount))*100
+			if i%1000 == 0:
+				sys.stdout.write('%4.1f percent done \r'  % done)
+                        #if date flag is used, skip lines not matching the date flag.
+                        if load_date:
+                                if load_date not in line:
+                                        continue
+                        try:
+				fqdn=str(find_domain_name(line))
+				if top_level_domain(fqdn) in self.dont_record:
+					continue
+				if fqdn.lower() in self.dont_record:
+					continue				
+				if 'sophosxl.net' in fqdn:
+					continue
+				
+				date=find_mm_dd_yyyy_from_line(line)
+				source_ip=first_ip_from_line(line)				
+				if source_ip in self.dont_record:
+					continue
+
+				'''in-addr.arpa indicate that a reverse lookup is taking place, when this happens, there are two IP's in the query/response.
+				If there is, we want to determine whether or not we want to perform a costly reverse lookup, which we cheapen a little by caching
+				in reverse_lookups{}
+				'''
+                                if lookup_reverse and 'in-addr(4)arpa' in line:
+                                        try:
+                                                if fqdn not in self.reverse_lookups:
+                                                        self.reverse_lookups[fqdn]=reverse_lookup(fqdn)
+                                                        fqdn=reverse_lookups(fqdn)
+                                                else:
+                                                        fqdn=reverse_lookups[fqdn]+' (reverse lookup)'
+                                        except:
+                                                fqdn=fqdn+' (reverse lookup failed)'
+                                elif 'in-addr.arpa' in line:
+                                        fqdn=fqdn+' (reverse lookup)'
+
+				'''
+				basic filter for specific websites.
+				'''
+                                if site_name:
+                                        if site_name not in fqdn:
+                                                continue
+
+                                if not isinstance(date,str) or not isinstance(source_ip,str) or not isinstance(fqdn,str):
+                                        #print error message about line?
+                                        continue
+
+                                if ' R Q [' in line and 'UDP Snd' in line:
+                                        if response:
+                                                self.response.append(date+"    "+source_ip+"   "+fqdn)
+                                                #print 'Response:        '+date+"        "+source_ip+"           "+fqdn
+						
+                                elif ' Q ['  in line and 'UDP Rcv'  in line:
+                                        if query:
+                                                self.query.append(date+"    "+source_ip+"   "+fqdn) 
+                                                #print 'Query:           '+date+"        "+source_ip+"           "+fqdn
+						
+
+                        except ValueError:
+                                continue
+
+                        except TypeError:
+                                continue
+
+                        except KeyboardInterrupt:
+                                break
+
+
+
+def main():
+	parser = argparse.ArgumentParser(description="Windows DNS parsing stuff.")
+	parser.add_argument('-f', '--file', help='File to inspect')
+	parser.add_argument('-Q', action='store_true', help='Print Queries')
+	parser.add_argument('-R', action='store_true', help='Print Responses')
+	parser.add_argument('-V', action='store_true', help='Perform reverse lookups')
+	parser.add_argument('-d', help='Target date, mm/dd/yyyy format.')
+	parser.add_argument('-s', help='target domain name')
+	args=parser.parse_args()
+
+
+	test=dns_results()
+	test.load_dns_log(args.file,args.d,args.V,args.s,args.Q,args.R)
+
+
+	
+	test.print_query()
+
+	test.print_response()
+	
+
+if __name__ == "__main__":
+        main()

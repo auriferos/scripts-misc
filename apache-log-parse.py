@@ -140,7 +140,7 @@ class log:
         # strip weird chars from strings for easier manipulation.
         cleaned=list(map(lambda x: self.clean(x), all))
   
-        #instead of doing this split assignment, I considered using regex; Still regex is prone to false positives. Since this is a structured log, and we're assuming 
+        #instead of doing this split assignment, I considered using regex; Still regex is prone to false positives. Since this is a structured log, and we're assuming its a single stream, this should be enough.
         visitor=cleaned[0]
         date=cleaned[3]
         offset=cleaned[4]

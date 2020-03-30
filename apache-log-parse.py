@@ -175,6 +175,9 @@ class log:
       except Exception as e:
         print(e)
 
+if len(sys.argv) < 2:
+  print("Usage: apache-log-parse.py ./log_file")
+  sys.exit(1)
 
 t=log()
 results=t.parse(sys.argv[1])
@@ -192,5 +195,6 @@ print('''
     Number of errors: %s (400s:%s, 500s:%s)
     Total data transferred: %s
 '''% (t.line_count,t.calc_duration(),t.most_popular(), t.most_freq_visitor(), min(t.load_times_aggregated), (sum(t.load_times_aggregated)/len(t.load_times_aggregated)), max(t.load_times_aggregated), t.show_errors(),len(t.four_hundreds),len(t.five_hundreds), t.show_transferred()) )
+
 
 

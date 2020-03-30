@@ -3,7 +3,7 @@ import os
 import subprocess
 import re
 
-
+# Check if a set of ACL's is homogeneous (parents dont differ from children)
 
 def mismatch(parent_acl, child_acl):
 	set1=set(parent_acl.splitlines())

@@ -64,7 +64,7 @@ class log:
         return string
 
     def summarize_stats(self, page):
-        load_times = t.page_stats[page]['load_times']
+        load_times = self.page_stats[page]['load_times']
         p_avg = int(sum(load_times) / len(load_times))
         p_min = min(load_times)
         p_max = max(load_times)
@@ -219,46 +219,48 @@ class log:
                 sys.stderr.write('ERROR: %s, exiting' % e)
                 sys.exit(1)
 
+def run_parser(log_file):
+    t = log()
+    results = t.parse(log_file)
+    # It would by DRY'er to only use the function call, but since I use this value
+    # a lot I'd rather not run it multiple times.
+    MP = t.most_popular()
+    MP_min, MP_avg, MP_max = t.summarize_stats(MP)
+    # I cast the average to int because who cares about fractions of milliseconds?
+    # (Aside from high speed traders)
+    print('''
+        Number of lines parsed: %s
+        Duration of log file: %s
 
-if len(sys.argv) < 2:
-    print("Usage: apache-log-parse.py ./log_file")
-    sys.exit(1)
+        Most requested page (MP): %s
+        Most frequent visitor: %s
 
-t = log()
-results = t.parse(sys.argv[1])
+        Min page load time: %s (%s for MP)
+        Average page load time: %s (%s for MP)
+        Max page load time: %s (%s for MP)
+
+        Number of errors: %s (400s:%s, 500s:%s)
+        Total data transferred: %s
+    ''' % (t.line_count,
+           (t.last - t.first),
+           MP,
+           t.most_freq_visitor(),
+           min(t.load_times_aggregated),
+           MP_min,
+           int((sum(t.load_times_aggregated) / len(t.load_times_aggregated))),
+           MP_avg,
+           max(t.load_times_aggregated),
+           MP_max,
+           t.errors,
+           len(t.four_hundreds),
+           len(t.five_hundreds),
+           t.total_transferred))
 
 
-# It would by DRY'er to only use the function call, but since I use this value
-# a lot I'd rather not run it multiple times.
-MP = t.most_popular()
-MP_min, MP_avg, MP_max = t.summarize_stats(MP)
 
-# I cast the average to int because who cares about fractions of milliseconds?
-# (Aside from high speed traders)
-print('''
-    Number of lines parsed: %s
-    Duration of log file: %s
 
-    Most requested page (MP): %s
-    Most frequent visitor: %s
-
-    Min page load time: %s (%s for MP)
-    Average page load time: %s (%s for MP)
-    Max page load time: %s (%s for MP)
-
-    Number of errors: %s (400s:%s, 500s:%s)
-    Total data transferred: %s
-''' % (t.line_count,
-       (t.last - t.first),
-       MP,
-       t.most_freq_visitor(),
-       min(t.load_times_aggregated),
-       MP_min,
-       int((sum(t.load_times_aggregated) / len(t.load_times_aggregated))),
-       MP_avg,
-       max(t.load_times_aggregated),
-       MP_max,
-       t.errors,
-       len(t.four_hundreds),
-       len(t.five_hundreds),
-       t.total_transferred))
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: apache-log-parse.py ./log_file")
+        sys.exit(1)
+    run_parser(sys.argv[1])

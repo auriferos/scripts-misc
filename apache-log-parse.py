@@ -1,200 +1,264 @@
 #!/usr/bin/env python3
 
+###############################################################################
+'''
+Assumptions:
+  We're assuming a single source log stream, not mixed logs from multiple sources,
+like you see sometimes in /var/log/messages.
+
+Using regex searchs could probably handle that, but it can be prone to false
+positives if log formats are similar, plus I figured it would be slower.
+
+I'm also assuming it's more interesting to know page stats on a per-page basis,
+because thresholds for whats considered an outlier might vary greatly by page.
+
+Limitations:
+  As mentioned before, this wont handle malformed logs gracefully, nor mixed
+log streams.
+
+Its also not particularly fast- It takes 2 seconds to parse 10mb, so it would
+take over 3m to parse a GB, and thats assuming linear scaling! (which it
+definitely would not)
+
+
+Testing:
+I did my testing on a subset of this dataset, and once the full thing worked
+I went about searching for some expected edge cases; The main edge I found was
+handling "//", since repeated slashes have no functional purpose/difference.
+
+
+'''
+###############################################################################
+
+
 import time
 import re
 import sys
 
 
 class log:
+    def __init__(self):
+        self.first = 0
+        self.last = 0
+        self.errors = 0
+        self.line_count = 0
+        self.visitor_list = {}
+        self.page_stats = {}
+        self.load_times_aggregated = []
+        self.total_transferred = 0
+        self.four_hundreds = []
+        self.five_hundreds = []
 
-  def __init__(self):
-    self.first=0
-    self.last=0
-    self.errors=0
-    self.line_count=0
-    self.visitor_list={}
-    self.page_stats={}
-    self.load_times_aggregated=[]
-    self.total_transferred=0
-    self.four_hundreds=[]
-    self.five_hundreds=[]
+    def clean(self, string):
+        # explained below, but prevents double counting, and makes substrings
+        # easier to handle.
+        # Originally I just replaced // with /, but i realized //// might be a
+        # possibility too!
+        for char in '[]"':
+            string = string.replace(char, "")
+        repeats = re.compile("[/]+")
+        substring = repeats.findall(string)
+        for s in substring:
+            string = string.replace(s, "/")
+        string = string.strip('\n')
+        return string
 
-  def clean(self,string):
-    for char in '[]"':
-      string=string.replace(char, "")
-    string=string.replace("//","/")
-    string=string.strip('\n')
-    return string
+    def summarize_stats(self, page):
+        load_times = t.page_stats[page]['load_times']
+        p_avg = int(sum(load_times) / len(load_times))
+        p_min = min(load_times)
+        p_max = max(load_times)
+        return p_min, p_avg, p_max
 
-  '''
-    dict[page] {max:0,min:0,visits:0}
-  '''
+    '''
+    reference in case i wanted to track averages by page.
+    dict[page] {max:0,min:0,visits:0,load_times:[]}
+    '''
 
-  def update_page_stats(self,url,time):
-    self.load_times_aggregated.append(time)
-    if url in self.page_stats.keys():
-      self.page_stats[url]['visits'] +=1
-      self.page_stats[url]['load_times'].append(time)
-      if self.page_stats[url]['max'] < time:
-        self.page_stats[url]['max'] = time
-      elif self.page_stats[url]['min'] > time:
-        self.page_stats[url]['min'] = time
-    else:
-      self.page_stats[url]={"max":time, "min":time, "visits": 1, 'load_times':[time]}
+    def update_page_stats(self, url, time):
+        self.load_times_aggregated.append(time)
+        if url in self.page_stats.keys():
+            self.page_stats[url]['visits'] += 1
+            self.page_stats[url]['load_times'].append(time)
+            if self.page_stats[url]['max'] < time:
+                self.page_stats[url]['max'] = time
+            elif self.page_stats[url]['min'] > time:
+                self.page_stats[url]['min'] = time
+        else:
+            self.page_stats[url] = {
+                "max": time,
+                "min": time,
+                "visits": 1,
+                'load_times': [time]}
 
+    def tabulate_errs(self, status_code):
+        fives = re.compile("5[0-9]{2}")
+        fours = re.compile("4[0-9]{2}")
 
-  def tabulate_errs(self,status_code):
-    #err_regex=re.compile("[45][0-9]{2}")
-    #err=err_regex.search(status_code)
-    #if hasattr(err, "group"):
-    #  self.errors += 1
-    fives=re.compile("5[0-9]{2}")
-    fours=re.compile("4[0-9]{2}")
+        fours = fours.search(status_code)
+        fives = fives.search(status_code)
 
-    fours=fours.search(status_code)
-    fives=fives.search(status_code)
+        # re will only have a group attr if the search found something.
+        # I like the look better than just appending ".group[0]" everywhere
+        # Unrelated, but I keep all the status codes in case you want to drill
+        # deeper.
+        if hasattr(fives, "group"):
+            self.errors += 1
+            self.five_hundreds.append(status_code)
 
-    if hasattr(fives, "group"):
-      self.errors += 1
-      self.five_hundreds.append(status_code)
+        elif hasattr(fours, "group"):
+            self.errors += 1
+            self.four_hundreds.append(status_code)
 
-    elif hasattr(fours, "group"):
-      self.errors += 1
-      self.four_hundreds.append(status_code)
+    def count_visitor(self, visitor):
+        if visitor in self.visitor_list.keys():
+            self.visitor_list[visitor] += 1
+        else:
+            self.visitor_list[visitor] = 1
 
+    def to_epoch(self, datestring):
+        epoch = time.mktime(time.strptime(datestring, '%d/%b/%Y:%H:%M:%S %z'))
+        return epoch
 
-  def increment_page_count(url):
-    if url not in page_visits.keys():
-      page_visits[url] = 1
-    else:
-      page_visits[url] += 1
+    def to_human(self, timestamp):
+        # dont want to have to mess with leap years, etc, so I'm keeping it
+        # very basic (some log files are really long spanning, ok?)
+        days = timestamp // (24 * 3600)
+        # modulus is useful
+        remainder = timestamp % (24 * 3600)
 
+        hours = remainder // 3600
+        remainder = remainder % 3600
 
-  def count_visitor(self,visitor):
-    if visitor in self.visitor_list.keys():
-      self.visitor_list[visitor] += 1
-    else:
-      self.visitor_list[visitor] = 1
+        minutes = remainder // 60
+        remainder = remainder % 60
 
-  def count_transferred(self,bytes):
-    self.total_transferred += int(bytes)
+        seconds = remainder
 
-  def to_epoch(self,datestring):
-    # check if zero padded
-    epoch=time.mktime(time.strptime(datestring, '%d/%b/%Y:%H:%M:%S %z'))
-    return epoch
+        formatted = "%s days, %s hours, %s minutes, %s seconds" % (
+            days, hours, minutes, seconds)
 
-  def to_human(self, timestamp):
-    # dont want to have to mess with leap years, etc.
-    days = timestamp // (24*3600)
-    # modulus is useful
-    remainder = timestamp % (24*3600)
+        return formatted
 
-    hours = remainder // 3600
-    remainder = remainder % 3600
+    def most_freq_visitor(self):
+        most = 0
+        mvp = 'N/A'
+        for visitor in self.visitor_list.keys():
+            if self.visitor_list[visitor] > most:
+                most = self.visitor_list[visitor]
+                mvp = visitor
+        return mvp
 
-    minutes = remainder // 60
-    remainder = remainder % 60
+    def most_popular(self):
+        # this could definitely go in the main parse loop, but eh, I like
+        # splitting some stuff out for readability and simplicity.
+        most = 0
+        most_popular = "N/A"
+        for site in self.page_stats.keys():
+            if self.page_stats[site]['visits'] > most:
+                most = self.page_stats[site]['visits']
+                most_popular = site
+        return most_popular
 
-    seconds = remainder
+    def parse(self, logfile):
+        for line in open(logfile):
+            try:
 
-    formatted="%s days, %s hours, %s minutes, %s seconds" % (days, hours, minutes, seconds)
+                '''
+                This serves 2 purposes; strip brackets and the like for easier
+                manipulation; and replace "//" with "/", so pages get counted
+                properly.
+                '''
+                line = self.clean(line)
 
-    return formatted
+                '''
+                This split method is admittedly fragile, and I considered
+                using regex, but decided against it, for readability mostly.
+                Since this is a structured log, consuming from a single
+                source, it should be enough.
+                And if you're using a script to determine the origin of log
+                streams instead of metadata or origin, something has probably
+                gone wrong.
+                '''
+                all = line.split(" ")
 
-  def calc_duration(self):
-    total_time=self.last-self.first
-    duration=self.to_human(total_time)
-    return duration
+                visitor = all[0]
+                date = all[3]
+                offset = all[4]
+                req_method = all[5]
+                req_url = all[6]
+                http_protocol = all[7]
+                return_code = all[8]
+                size = all[9]
 
-  def show_errors(self):
-    return str(self.errors)
+                '''
+                Downside of the split method above; Solves edge cases caused
+                by variable spaces in agent string.
+                '''
+                latency = int(line.split(" ")[-1:][0])
 
-  def show_transferred(self):
-    return "%s bytes" % self.total_transferred
+                curr = 0
+                curr = self.to_epoch("%s %s" % (date, offset))
 
-  def most_freq_visitor(self):
-    most=0
-    mvp='N/A'
-    for visitor in self.visitor_list.keys():
-      if self.visitor_list[visitor] > most:
-        most=self.visitor_list[visitor]
-        mvp=visitor
-    return mvp
+                # handle edge case of first run.
+                if self.first == 0:
+                    self.first = curr
+                elif curr > self.last:
+                    self.last = curr
 
-  def most_popular(self):
-    most=0
-    most_popular="N/A"
-    for site in self.page_stats.keys():
-      if self.page_stats[site]['visits'] > most:
-        most=self.page_stats[site]['visits']
-        most_popular=site
-    return most_popular
+                elif curr < self.first:
+                    self.first = curr
+                self.update_page_stats(req_url, latency)
+                self.count_visitor(visitor)
+                self.line_count += 1
+                self.total_transferred += int(size)
+                self.tabulate_errs(return_code)
 
-  def parse(self,logfile):
-    for line in open(logfile):
-      try:
-        line=self.clean(line)
-        all=line.split(" ")
-  
-        # strip weird chars from strings for easier manipulation.
-        cleaned=list(map(lambda x: self.clean(x), all))
-  
-        #instead of doing this split assignment, I considered using regex; Still regex is prone to false positives. Since this is a structured log, and we're assuming its a single stream, this should be enough.
-        visitor=cleaned[0]
-        date=cleaned[3]
-        offset=cleaned[4]
-        req_method=cleaned[5]
-        req_url=cleaned[6]
-        http_protocol=cleaned[7]
-        return_code=cleaned[8]
-        size=cleaned[9]
-        # problem case caused by variable spaces in agent
-        latency=int(line.split(" ")[-1:][0])
-  
-        #increment_page_count(req_url)
-  
-        #remember to reset counters on loops
-        curr=0
-        curr=self.to_epoch("%s %s" % (date, offset)) 
-  
-        if self.first == 0:
-          self.first = curr
-  
-        elif curr > self.last:
-          self.last=curr
-  
-        elif curr < self.first:
-          self.first=curr
-        self.update_page_stats(req_url,latency)
-        self.count_visitor(visitor)
-        self.line_count +=1
-        self.count_transferred(size)
-        self.tabulate_errs(return_code)
+            except Exception as e:
+                # Alert if you hit errors;
+                sys.stderr.write('ERROR: %s, exiting' % e)
+                sys.exit(1)
 
-      except Exception as e:
-        print(e)
 
 if len(sys.argv) < 2:
-  print("Usage: apache-log-parse.py ./log_file")
-  sys.exit(1)
+    print("Usage: apache-log-parse.py ./log_file")
+    sys.exit(1)
 
-t=log()
-results=t.parse(sys.argv[1])
+t = log()
+results = t.parse(sys.argv[1])
+
+
+# It would by DRY'er to only use the function call, but since I use this value
+# a lot I'd rather not run it multiple times.
+MP = t.most_popular()
+MP_min, MP_avg, MP_max = t.summarize_stats(MP)
+
+# I cast the average to int because who cares about fractions of milliseconds?
+# (Aside from high speed traders)
 print('''
     Number of lines parsed: %s
     Duration of log file: %s
 
-    Most requested page: %s
+    Most requested page (MP): %s
     Most frequent visitor: %s
 
-    Min page load time: %s
-    Average page load time: %s
-    Max page load time: %s
+    Min page load time: %s (%s for MP)
+    Average page load time: %s (%s for MP)
+    Max page load time: %s (%s for MP)
 
     Number of errors: %s (400s:%s, 500s:%s)
     Total data transferred: %s
-'''% (t.line_count,t.calc_duration(),t.most_popular(), t.most_freq_visitor(), min(t.load_times_aggregated), (sum(t.load_times_aggregated)/len(t.load_times_aggregated)), max(t.load_times_aggregated), t.show_errors(),len(t.four_hundreds),len(t.five_hundreds), t.show_transferred()) )
-
-
-
+''' % (t.line_count,
+       (t.last - t.first),
+       MP,
+       t.most_freq_visitor(),
+       min(t.load_times_aggregated),
+       MP_min,
+       int((sum(t.load_times_aggregated) / len(t.load_times_aggregated))),
+       MP_avg,
+       max(t.load_times_aggregated),
+       MP_max,
+       t.errors,
+       len(t.four_hundreds),
+       len(t.five_hundreds),
+       t.total_transferred))

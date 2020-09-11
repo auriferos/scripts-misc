@@ -1,5 +1,6 @@
 # scripts-misc
 ============
 
-## Just some scripts I've put together. This is updated infrequently.
+
+Sometimes I will script something. Sometimes I will even upload that thing here. _This is updated infrequently._
 

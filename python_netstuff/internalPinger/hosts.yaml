@@ -1,0 +1,10 @@
+- hostname: https://fizz.buzz.com
+  component_id: foobar        # pingdom component ID
+  frequency: 10               # seconds to wait between 'healthy' responses
+  port: 443                   # port to check on
+  method: curl                # method to chech health (only 'curl' is implemented so far)
+  timeout: 2                  # seconds to wait before throwing error.
+  wait_on_failure: 30         # seconds to wait between 'unhealthy' responses
+  max_retries: 12             # number of sequential fails before critical error thrown
+
+

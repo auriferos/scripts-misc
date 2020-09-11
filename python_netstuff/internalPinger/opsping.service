@@ -1,0 +1,11 @@
+[Unit]
+Description=Internal ping tool to update statuspage.io
+
+[Service]
+Type=simple
+User=ops
+WorkingDirectory=/home/ops/opsping/
+ExecStart=/usr/bin/python /home/ops/opsping/opsping.py
+
+[Install]
+WantedBy=multi-user.target

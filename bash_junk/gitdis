@@ -8,7 +8,8 @@
 # concerns. Mostly for encryption[+compression] of cat photos, songs,
 # nuclear launch codes, vagrant files, etc.
 #
-
+# This is obviously a VERY BAD IDEA, but it's an interesting thought experiment.
+# _do not use this_
 
 function encrypt {
 	read -sp "Please set encryption password: " PASSWD1

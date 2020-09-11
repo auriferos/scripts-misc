@@ -2,6 +2,8 @@
 
 ###############################################################################
 '''
+(this was a coding challenge for an old job application- put together an apache log parser in ~2hrs.)
+
 Assumptions:
   We're assuming a single source log stream, not mixed logs from multiple sources,
 like you see sometimes in /var/log/messages.
@@ -19,14 +21,6 @@ log streams.
 Its also not particularly fast- It takes 2 seconds to parse 10mb, so it would
 take over 3m to parse a GB, and thats assuming linear scaling! (which it
 definitely would not)
-
-
-Testing:
-I did my testing on a subset of this dataset, and once the full thing worked
-I went about searching for some expected edge cases; The main edge I found was
-handling "//", since repeated slashes have no functional purpose/difference.
-
-
 '''
 ###############################################################################
 
